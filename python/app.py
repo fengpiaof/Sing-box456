@@ -19,7 +19,7 @@ load_dotenv()
 UPLOAD_URL = os.environ.get('UPLOAD_URL', '')          # 节点或订阅上传地址,只填写这个地址将上传节点,同时填写PROJECT_URL将上传订阅
 PROJECT_URL = os.environ.get('PROJECT_URL', '')        # 项目url,需要自动保活或自动上传订阅需要填写,例如：https://www.google.com,
 AUTO_ACCESS = os.environ.get('AUTO_ACCESS', 'false').lower() == 'true'  # false关闭自动保活, true开启自动保活，默认关闭
-FILE_PATH = os.environ.get('FILE_PATH', './.cache')    # 运行路径,sub.txt保存路径
+FILE_PATH = os.environ.get('FILE_PATH', '.cache')      # 运行路径,sub.txt保存路径
 SUB_PATH = os.environ.get('SUB_PATH', 'sub')           # 订阅token,默认sub，例如：https://www.google.com/sub
 UUID = os.environ.get('UUID', 'f929c4da-dc2e-4e0d-9a6f-1799036af214')  # UUID,如使用哪吒v1,在不同的平台部署需要修改,否则会覆盖
 NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')      # 哪吒面板域名或ip, v1格式: nz.serv00.net:8008, v0格式: nz.serv00.net
@@ -28,15 +28,19 @@ NEZHA_KEY = os.environ.get('NEZHA_KEY', '')            # v1哪吒的NZ_CLIENT_SE
 ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN', '')        # Argo固定隧道域名,留空即使用临时隧道
 ARGO_AUTH = os.environ.get('ARGO_AUTH', '')            # Argo固定隧道密钥,留空即使用临时隧道
 ARGO_PORT = int(os.environ.get('ARGO_PORT', '8001'))   # Argo端口,使用固定隧道token需在cloudflare后台设置端口和这里一致
+S5_PORT_STR = os.environ.get('S5_PORT', '')            # socks5端口，支持多端口的可以填写，否则留空
 TUIC_PORT_STR = os.environ.get('TUIC_PORT', '')        # tuic端口,支持多端口的玩具可以填写开启,否则保持不变
 HY2_PORT_STR = os.environ.get('HY2_PORT', '')          # hy2端口,支持多端口的玩具可以填写开启,否则保持不变
+ANYTLS_PORT_STR = os.environ.get('ANYTLS_PORT', '')    # AnyTLS端口，支持多端口的可以填写，否则留空
 REALITY_PORT_STR = os.environ.get('REALITY_PORT', '')  # Reality端口,支持多端口的玩具可以填写开启,否则保持不变
+ANYREALITY_PORT_STR = os.environ.get('ANYREALITY_PORT', '')  # Anyr-eality端口，支持多端口的可以填写，否则留空
 CFIP = os.environ.get('CFIP', 'cdns.doon.eu.org')      # 优选ip或优选域名
 CFPORT = int(os.environ.get('CFPORT', '443'))          # 优选ip或优选域名对应端口
 PORT = int(os.environ.get('PORT', '3000'))             # http服务端口,订阅端口
-NAME = os.environ.get('NAME', 'sbx')                   # 节点名称
+NAME = os.environ.get('NAME', '')                      # 节点名称
 CHAT_ID = os.environ.get('CHAT_ID', '')                # Telegram chat_id,推送节点到tg,两个便来给你同时填写才会推送
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '')            # Telegram bot_token
+DISABLE_ARGO = os.environ.get('DISABLE_ARGO', 'false').lower() == 'true'  # 设置为 true 时禁用argo,false开启
 
 # Create running folder
 def create_directory():
@@ -48,9 +52,12 @@ def create_directory():
         print(f"{FILE_PATH} already exists")
 
 # 端口变量赋值
+S5_PORT = int(S5_PORT_STR) if S5_PORT_STR and S5_PORT_STR.isdigit() else None
 TUIC_PORT = int(TUIC_PORT_STR) if TUIC_PORT_STR and TUIC_PORT_STR.isdigit() else None
 HY2_PORT = int(HY2_PORT_STR) if HY2_PORT_STR and HY2_PORT_STR.isdigit() else None
+ANYTLS_PORT = int(ANYTLS_PORT_STR) if ANYTLS_PORT_STR and ANYTLS_PORT_STR.isdigit() else None
 REALITY_PORT = int(REALITY_PORT_STR) if REALITY_PORT_STR and REALITY_PORT_STR.isdigit() else None
+ANYREALITY_PORT = int(ANYREALITY_PORT_STR) if ANYREALITY_PORT_STR and ANYREALITY_PORT_STR.isdigit() else None
 
 # Global variables
 private_key = ''
@@ -80,7 +87,7 @@ def delete_nodes():
             return None
 
         decoded = base64.b64decode(file_content).decode('utf-8')
-        nodes = [line for line in decoded.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
+        nodes = [line for line in decoded.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://', 'anytls://', 'socks://'])]
 
         if not nodes:
             return
@@ -112,10 +119,25 @@ def cleanup_old_files():
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(b'Hello World')
+            try:
+                index_path = os.path.join(FILE_PATH, 'index.html')
+                if os.path.exists(index_path):
+                    with open(index_path, 'rb') as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(content)
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(b'Hello world!<br><br>You can visit /{SUB_PATH}(Default: /sub) get your nodes!')
+            except Exception as e:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(b'Hello world!<br><br>You can visit /{SUB_PATH}(Default: /sub) get your nodes!')
             
         elif self.path == f'/{SUB_PATH}':
             try:
@@ -167,12 +189,12 @@ def get_files_for_architecture(architecture):
     if architecture == 'arm':
         base_files = [
             {"fileName": "web", "fileUrl": "https://arm64.ssss.nyc.mn/sb"},
-            {"fileName": "bot", "fileUrl": "https://arm64.ssss.nyc.mn/bot"}
+            {"fileName": "bot", "fileUrl": "https://arm64.ssss.nyc.mn/2go"}
         ]
     else:
         base_files = [
             {"fileName": "web", "fileUrl": "https://amd64.ssss.nyc.mn/sb"},
-            {"fileName": "bot", "fileUrl": "https://amd64.ssss.nyc.mn/bot"}
+            {"fileName": "bot", "fileUrl": "https://amd64.ssss.nyc.mn/2go"}
         ]
 
     if NEZHA_SERVER and NEZHA_KEY:
@@ -198,6 +220,10 @@ def authorize_files(file_paths):
 
 # Configure Argo tunnel
 def argo_type():
+    if DISABLE_ARGO:
+        print("DISABLE_ARGO is set to true, disable argo tunnel")
+        return
+
     if not ARGO_AUTH or not ARGO_DOMAIN:
         print("ARGO_DOMAIN or ARGO_AUTH variable is empty, use quick tunnels")
         return
@@ -268,7 +294,7 @@ async def download_files_and_run():
     # Check TLS
     port = NEZHA_SERVER.split(":")[-1] if ":" in NEZHA_SERVER else ""
     if port in ["443", "8443", "2096", "2087", "2083", "2053"]:
-        nezha_tls = "true"
+        nezha_tls = "tls"
     else:
         nezha_tls = "false"
 
@@ -318,16 +344,16 @@ uuid: {UUID}"""
         return
     
     # Generate private.key
-    exec_cmd('openssl ecparam -genkey -name prime256v1 -out "private.key"')
+    exec_cmd(f'openssl ecparam -genkey -name prime256v1 -out "{FILE_PATH}private.key"')
     
     # Generate cert.pem
-    exec_cmd('openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=bing.com"')
+    exec_cmd(f'openssl req -new -x509 -days 3650 -key "{FILE_PATH}private.key" -out "{FILE_PATH}cert.pem" -subj "/CN=bing.com"')
     
     # Generate configuration file
     config = {
         "log": {
             "disabled": True,
-            "level": "error",
+            "level": "info",
             "timestamp": True
         },
         "inbounds": [
@@ -349,25 +375,25 @@ uuid: {UUID}"""
             }
         ],
         "endpoints": [
-            {
-                "type": "wireguard",
-                "tag": "warp-out",
-                "mtu": 1280,
-                "address": [
-                    "172.16.0.2/32",
-                    "2606:4700:110:8dfe:d141:69bb:6b80:925/128"
-                ],
-                "private_key": "YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
-                "peers": [
-                    {
-                        "address": "engage.cloudflareclient.com",
-                        "port": 2408,
-                        "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-                        "allowed_ips": ["0.0.0.0/0", "::/0"],
-                        "reserved": [78, 135, 76]
-                    }
-                ]
-            }
+          {
+              "type": "wireguard",
+              "tag": "wireguard-out",
+              "mtu": 1280,
+              "address": [
+                  "172.16.0.2/32",
+                  "2606:4700:110:8dfe:d141:69bb:6b80:925/128"
+              ],
+              "private_key": "YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
+              "peers": [
+                  {
+                    "address": "engage.cloudflareclient.com",
+                    "port": 2408,
+                    "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+                    "allowed_ips": ["0.0.0.0/0", "::/0"],
+                    "reserved": [78, 135, 76]
+                  }
+              ]
+          }
         ],
         "outbounds": [
             {
@@ -395,7 +421,7 @@ uuid: {UUID}"""
             "rules": [
                 {
                     "rule_set": ["openai", "netflix"],
-                    "outbound": "warp-out"
+                    "outbound": "wireguard-out"
                 }
             ],
             "final": "direct"
@@ -446,8 +472,8 @@ uuid: {UUID}"""
             "tls": {
                 "enabled": True,
                 "alpn": ["h3"],
-                "certificate_path": "cert.pem",
-                "key_path": "private.key"
+                "certificate_path": f"{FILE_PATH}cert.pem",
+                "key_path": f"{FILE_PATH}private.key"
             }
         }
         config["inbounds"].append(hysteria_config)
@@ -467,11 +493,72 @@ uuid: {UUID}"""
             "tls": {
                 "enabled": True,
                 "alpn": ["h3"],
-                "certificate_path": "cert.pem",
-                "key_path": "private.key"
+                "certificate_path": f"{FILE_PATH}cert.pem",
+                "key_path": f"{FILE_PATH}private.key"
             }
         }
         config["inbounds"].append(tuic_config)
+    
+    if S5_PORT and S5_PORT > 0:
+        s5_config = {
+            "tag": "s5-in",
+            "type": "socks",
+            "listen": "::",
+            "listen_port": S5_PORT,
+            "users": [
+                {
+                    "username": UUID[0:8],
+                    "password": UUID[-12:]
+                }
+            ]
+        }
+        config["inbounds"].append(s5_config)
+    
+    if ANYTLS_PORT and ANYTLS_PORT > 0:
+        anytls_config = {
+            "tag": "anytls-in",
+            "type": "anytls",
+            "listen": "::",
+            "listen_port": ANYTLS_PORT,
+            "users": [
+                {
+                    "password": UUID
+                }
+            ],
+            "tls": {
+                "enabled": True,
+                "certificate_path": f"{FILE_PATH}cert.pem",
+                "key_path": f"{FILE_PATH}private.key"
+            }
+        }
+        config["inbounds"].append(anytls_config)
+    
+    if ANYREALITY_PORT and ANYREALITY_PORT > 0:
+        anyreality_config = {
+            "tag": "anyreality-in",
+            "type": "anytls",
+            "listen": "::",
+            "listen_port": ANYREALITY_PORT,
+            "users": [
+                {
+                    "password": UUID
+                }
+            ],
+            "tls": {
+                "enabled": True,
+                "server_name": "www.iij.ad.jp",
+                "reality": {
+                    "enabled": True,
+                    "handshake": {
+                        "server": "www.iij.ad.jp",
+                        "server_port": 443
+                    },
+                    "private_key": private_key,
+                    "short_id": [""]
+                }
+            }
+        }
+        config["inbounds"].append(anyreality_config)
     
     with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)
@@ -480,7 +567,7 @@ uuid: {UUID}"""
     if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
         tls_ports = ['443', '8443', '2096', '2087', '2083', '2053']
         nezha_tls = '--tls' if NEZHA_PORT in tls_ports else ''
-        command = f"nohup {os.path.join(FILE_PATH, 'npm')} -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {nezha_tls} --disable-auto-update --report-delay 4 --skip-conn --skip-procs >/dev/null 2>&1 &"
+        command = f"nohup {os.path.join(FILE_PATH, 'npm')} -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {nezha_tls} >/dev/null 2>&1 &"
         
         try:
             exec_cmd(command)
@@ -511,20 +598,21 @@ uuid: {UUID}"""
         print(f"web running error: {e}")
     
     # Run cloudflared
-    if os.path.exists(os.path.join(FILE_PATH, 'bot')):
-        if re.match(r'^[A-Z0-9a-z=]{120,250}$', ARGO_AUTH):
-            args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token {ARGO_AUTH}"
-        elif "TunnelSecret" in ARGO_AUTH:
-            args = f"tunnel --edge-ip-version auto --config {os.path.join(FILE_PATH, 'tunnel.yml')} run"
-        else:
-            args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile {os.path.join(FILE_PATH, 'boot.log')} --loglevel info --url http://localhost:{ARGO_PORT}"
-        
-        try:
-            exec_cmd(f"nohup {os.path.join(FILE_PATH, 'bot')} {args} >/dev/null 2>&1 &")
-            print('bot is running')
-            time.sleep(2)
-        except Exception as e:
-            print(f"Error executing command: {e}")
+    if not DISABLE_ARGO:
+        if os.path.exists(os.path.join(FILE_PATH, 'bot')):
+            if re.match(r'^[A-Z0-9a-z=]{120,250}$', ARGO_AUTH):
+                args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token {ARGO_AUTH}"
+            elif "TunnelSecret" in ARGO_AUTH:
+                args = f"tunnel --edge-ip-version auto --config {os.path.join(FILE_PATH, 'tunnel.yml')} run"
+            else:
+                args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile {os.path.join(FILE_PATH, 'boot.log')} --loglevel info --url http://localhost:{ARGO_PORT}"
+            
+            try:
+                exec_cmd(f"nohup {os.path.join(FILE_PATH, 'bot')} {args} >/dev/null 2>&1 &")
+                print('bot is running')
+                time.sleep(2)
+            except Exception as e:
+                print(f"Error executing command: {e}")
     
     time.sleep(5)
     
@@ -533,6 +621,10 @@ uuid: {UUID}"""
 
 # Extract domains from cloudflared logs
 async def extract_domains():
+    if DISABLE_ARGO:
+        await generate_links(None)
+        return
+
     argo_domain = None
 
     if ARGO_AUTH and ARGO_DOMAIN:
@@ -604,7 +696,7 @@ def upload_nodes():
         with open(list_path, 'r') as f:
             content = f.read()
         
-        nodes = [line for line in content.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
+        nodes = [line for line in content.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://', 'anytls://', 'socks://'])]
         
         if not nodes:
             return
@@ -663,39 +755,76 @@ async def generate_links(argo_domain):
 
     # Get ISP info
     try:
-        meta_info = subprocess.check_output(
-            'curl -sm 3 -H "User-Agent: Mozilla/5.0" "https://api.ip.sb/geoip" | awk -F\" '{print $32"-"$8}' | sed -e 's/ /_/g'',
-            shell=True
-        ).decode().strip()
+        cmd = '''curl -sm 3 -H 'User-Agent: Mozilla/5.0' 'https://api.ip.sb/geoip' | tr -d '\n' | awk -F'"' '{c="";i="";for(x=1;x<=NF;x++){if($x=="country_code")c=$(x+2);if($x=="isp")i=$(x+2)};if(c&&i)print c"-"i}' | sed 's/ /_/g' '''
+        meta_info = subprocess.check_output(cmd, shell=True).decode().strip()
         ISP = meta_info
     except:
         ISP = "Unknown"
 
-    # Wait 2 seconds before generating nodes
-    time.sleep(2)
+    if NAME and NAME.strip():
+        Nodename = f"{NAME.strip()}-{ISP}"
+    else:
+        Nodename = f"{ISP}"
 
     # vmess node
-    vmess_config = {
-        "v": "2","ps": f"{NAME}-{ISP}","add": CFIP,"port": CFPORT,"id": UUID,"aid": "0","scy": "none","net": "ws","type": "none",
-        "host": argo_domain,"path": "/vmess-argo?ed=2560","tls": "tls","sni": argo_domain,"alpn": "","fp": "firefox"
-        }
-    
-    vmess_node = f"vmess://{base64.b64encode(json.dumps(vmess_config).encode()).decode()}"
+    vmess_node = ""
+    if not DISABLE_ARGO and argo_domain:
+        vmess_config = {
+            "v": "2","ps": f"{Nodename}","add": CFIP,"port": CFPORT,"id": UUID,"aid": "0","scy": "auto","net": "ws","type": "none",
+            "host": argo_domain,"path": "/vmess-argo?ed=2560","tls": "tls","sni": argo_domain,"alpn": "","fp": "firefox"
+            }
+        
+        vmess_node = f"vmess://{base64.b64encode(json.dumps(vmess_config).encode()).decode()}"
 
-    sub_txt = vmess_node  # Always generate vmess node
+    # Initialize sub_txt with vmess node if Argo is enabled
+    if vmess_node:
+        sub_txt = vmess_node
+    else:
+        sub_txt = ''
 
     # Generate other nodes based on port
     if TUIC_PORT is not None:
-        tuic_node = f"\ntuic://{UUID}:@{SERVER_IP}:{TUIC_PORT}?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#{NAME}-{ISP}"
-        sub_txt += tuic_node
+        tuic_node = f"\ntuic://{UUID}:@{SERVER_IP}:{TUIC_PORT}?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#{Nodename}"
+        if sub_txt:
+            sub_txt += tuic_node
+        else:
+            sub_txt = tuic_node
 
     if HY2_PORT is not None:
-        hysteria_node = f"\nhysteria2://{UUID}@{SERVER_IP}:{HY2_PORT}/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#{NAME}-{ISP}"
-        sub_txt += hysteria_node
+        hysteria_node = f"\nhysteria2://{UUID}@{SERVER_IP}:{HY2_PORT}/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#{Nodename}"
+        if sub_txt:
+            sub_txt += hysteria_node
+        else:
+            sub_txt = hysteria_node
 
     if REALITY_PORT is not None:
-        vless_node = f"\nvless://{UUID}@{SERVER_IP}:{REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=firefox&pbk={public_key}&type=tcp&headerType=none#{NAME}-{ISP}"
-        sub_txt += vless_node
+        vless_node = f"\nvless://{UUID}@{SERVER_IP}:{REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=chrome&pbk={public_key}&type=tcp&headerType=none#{Nodename}"
+        if sub_txt:
+            sub_txt += vless_node
+        else:
+            sub_txt = vless_node
+
+    if ANYTLS_PORT is not None:
+        anytls_node = f"\nanytls://{UUID}@{SERVER_IP}:{ANYTLS_PORT}?security=tls&sni={SERVER_IP}&fp=chrome&insecure=1&allowInsecure=1#{Nodename}"
+        if sub_txt:
+            sub_txt += anytls_node
+        else:
+            sub_txt = anytls_node
+
+    if ANYREALITY_PORT is not None:
+        anyreality_node = f"\nanytls://{UUID}@{SERVER_IP}:{ANYREALITY_PORT}?security=reality&sni=www.iij.ad.jp&fp=chrome&pbk={public_key}&type=tcp&headerType=none#{Nodename}"
+        if sub_txt:
+            sub_txt += anyreality_node
+        else:
+            sub_txt = anyreality_node
+
+    if S5_PORT is not None:
+        S5_AUTH = base64.b64encode(f"{UUID[0:8]}:{UUID[-12:]}".encode()).decode()
+        s5_node = f"\nsocks://{S5_AUTH}@{SERVER_IP}:{S5_PORT}#{Nodename}"
+        if sub_txt:
+            sub_txt += s5_node
+        else:
+            sub_txt = s5_node
 
     # Save to files
     with open(sub_path, 'w') as f:
@@ -704,8 +833,8 @@ async def generate_links(argo_domain):
     with open(list_path, 'w') as f:
         f.write(sub_txt)
     
-    print(base64.b64encode(sub_txt.encode()).decode())
-    
+    print('\033[32m' + base64.b64encode(sub_txt.encode()).decode() + '\033[0m')
+    print(f"\nLogs will be deleted in 90 seconds,you can copy the above nodes")
     print(f"{FILE_PATH}/sub.txt saved successfully")
     
     # Additional actions
